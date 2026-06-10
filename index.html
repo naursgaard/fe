@@ -135,7 +135,7 @@ hr{border:none;border-top:1px solid var(--bdr)}
 <header>
   <div>
     <div class="logo">Frameo <span>Editor</span></div>
-    <div class="sub">Billedeeditor med Frameo-deling · v1.45</div>
+    <div class="sub">Billedeeditor med Frameo-deling · v1.46</div>
   </div>
 </header>
 
@@ -991,13 +991,24 @@ function ghSave(){
   var t=document.getElementById('GHTOKEN').value.trim();
   var r=document.getElementById('GHREPO').value.trim();
   var f=document.getElementById('GHFILE').value.trim();
-  if(!t){ setGHStatus('Indtast et token!','#e74c3c'); return; }
+  if(!t){ setGHStatus('❌ Indtast et token!','#e74c3c'); return; }
   localStorage.setItem('gh_token',t);
   localStorage.setItem('gh_repo',r);
   localStorage.setItem('gh_file',f);
-  setGHStatus('Gemt! Tester forbindelse...','#4a9eff');
-  ghPush(getFavs(), function(ok,msg){
-    setGHStatus(ok?'✅ Forbundet og gemt!':'❌ '+msg, ok?'#2ecc71':'#e74c3c');
+  setGHStatus('⏳ Tester forbindelse til GitHub...','#4a9eff');
+  // Test token validity first
+  fetch('https://api.github.com/repos/'+r,{
+    headers:{'Authorization':'token '+t,'Accept':'application/vnd.github.v3+json'}
+  }).then(function(resp){
+    if(resp.status===401){setGHStatus('❌ Token ugyldigt eller udløbet','#e74c3c');return;}
+    if(resp.status===404){setGHStatus('❌ Repository ikke fundet: '+r,'#e74c3c');return;}
+    if(!resp.ok){setGHStatus('❌ GitHub fejl: HTTP '+resp.status,'#e74c3c');return;}
+    setGHStatus('✅ Token OK! Gemmer skabeloner...','#2ecc71');
+    ghPush(getFavs(), function(ok,msg){
+      setGHStatus(ok?'✅ Alt gemt på GitHub!':'❌ Gem fejlede: '+msg, ok?'#2ecc71':'#e74c3c');
+    });
+  }).catch(function(e){
+    setGHStatus('❌ Netværksfejl: '+e.message,'#e74c3c');
   });
 }
 function setGHStatus(msg,col){
