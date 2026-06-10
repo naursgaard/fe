@@ -135,7 +135,7 @@ hr{border:none;border-top:1px solid var(--bdr)}
 <header>
   <div>
     <div class="logo">Frameo <span>Editor</span></div>
-    <div class="sub">Billedeeditor med Frameo-deling · v1.44</div>
+    <div class="sub">Billedeeditor med Frameo-deling · v1.45</div>
   </div>
 </header>
 
@@ -289,12 +289,41 @@ hr{border:none;border-top:1px solid var(--bdr)}
     </div>
 
     <!-- Gem som skabelon -->
-    <button onclick="saveFav()" style="width:100%;margin-top:8px;padding:8px;border-radius:7px;border:1px solid var(--bdr);background:var(--surf);color:#eaeaea;font-size:13px;cursor:pointer;font-family:inherit">⭐ Gem som skabelon</button>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button onclick="saveFav()" style="flex:1;padding:8px;border-radius:7px;border:1px solid var(--bdr);background:var(--surf);color:#eaeaea;font-size:13px;cursor:pointer;font-family:inherit">⭐ Gem skabelon</button>
+      <button onclick="openGHM()" style="padding:8px 10px;border-radius:7px;border:1px solid var(--bdr);background:var(--surf);color:#eaeaea;font-size:16px;cursor:pointer" title="GitHub indstillinger">⚙️</button>
+    </div>
 
     <!-- Skabelonliste -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;margin-bottom:2px"><span style="font-size:11px;color:var(--mut)">Skabeloner</span><span id="ghind" style="font-size:11px"></span></div>
     <div id="favlist" style="margin-top:8px;display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto"></div>
 
     <div style="margin-top:8px;padding:8px;border-radius:7px;border:1px solid var(--bdr);background:var(--surf);font-size:11px;color:var(--mut);text-align:center">🎤 Brug tastaturets mikrofon-knap til at tale tekst ind</div>
+  </div>
+</div>
+
+<!-- GITHUB SKABELONER MODAL -->
+<div class="mov" id="GHM">
+  <div class="mod">
+    <h2>⚙️ GitHub skabeloner</h2>
+    <p>Indtast dit GitHub Personal Access Token for at gemme skabeloner direkte i dit repository.</p>
+    <div class="fr" style="margin-bottom:10px">
+      <label>Personal Access Token</label>
+      <input type="password" id="GHTOKEN" placeholder="ghp_xxxxxxxxxxxx" style="font-size:13px">
+    </div>
+    <div class="fr" style="margin-bottom:10px">
+      <label>Repository (bruger/repo)</label>
+      <input type="text" id="GHREPO" value="naursgaard/fe" style="font-size:13px">
+    </div>
+    <div class="fr" style="margin-bottom:10px">
+      <label>Filnavn</label>
+      <input type="text" id="GHFILE" value="skabeloner.json" style="font-size:13px">
+    </div>
+    <div id="ghstatus" style="font-size:12px;color:var(--mut);margin-bottom:10px;min-height:18px"></div>
+    <div class="mac">
+      <button class="bdl" style="flex:1;border-radius:8px;cursor:pointer;font-family:inherit;border:none;font-size:13px" onclick="ghSave()">💾 Gem token</button>
+      <button class="b" onclick="closeGHM()" style="padding:9px 14px">Luk</button>
+    </div>
   </div>
 </div>
 
@@ -371,6 +400,7 @@ function init(){
   },{passive:false});
   layout();
   setTimeout(layout,100);
+  setTimeout(ghAutoSync,500);
 }
 
 function layout(){
@@ -943,11 +973,89 @@ function resetMicBtn(){
 }
 
 
-// ── SKABELONER (localStorage) ─────────────────────────────────
+// ── SKABELONER (localStorage + GitHub) ───────────────────────
 function getFavs(){
   try{ return JSON.parse(localStorage.getItem('frameo_favs')||'[]'); }
   catch(e){ return []; }
 }
+function setFavs(favs){
+  localStorage.setItem('frameo_favs', JSON.stringify(favs));
+}
+
+// GitHub helpers
+function ghToken(){ return localStorage.getItem('gh_token')||''; }
+function ghRepo(){ return localStorage.getItem('gh_repo')||'naursgaard/fe'; }
+function ghFile(){ return localStorage.getItem('gh_file')||'skabeloner.json'; }
+
+function ghSave(){
+  var t=document.getElementById('GHTOKEN').value.trim();
+  var r=document.getElementById('GHREPO').value.trim();
+  var f=document.getElementById('GHFILE').value.trim();
+  if(!t){ setGHStatus('Indtast et token!','#e74c3c'); return; }
+  localStorage.setItem('gh_token',t);
+  localStorage.setItem('gh_repo',r);
+  localStorage.setItem('gh_file',f);
+  setGHStatus('Gemt! Tester forbindelse...','#4a9eff');
+  ghPush(getFavs(), function(ok,msg){
+    setGHStatus(ok?'✅ Forbundet og gemt!':'❌ '+msg, ok?'#2ecc71':'#e74c3c');
+  });
+}
+function setGHStatus(msg,col){
+  var el=document.getElementById('ghstatus');
+  if(el){el.textContent=msg;el.style.color=col||'var(--mut)';}
+}
+function openGHM(){
+  document.getElementById('GHTOKEN').value=ghToken();
+  document.getElementById('GHREPO').value=ghRepo();
+  document.getElementById('GHFILE').value=ghFile();
+  setGHStatus('');
+  document.getElementById('GHM').classList.add('open');
+}
+function closeGHM(){ document.getElementById('GHM').classList.remove('open'); }
+document.getElementById('GHM').addEventListener('click',function(e){if(e.target===e.currentTarget)closeGHM();});
+
+// Push favorites to GitHub
+function ghPush(favs, cb){
+  var token=ghToken();
+  if(!token){ if(cb)cb(false,'Intet token'); return; }
+  var repo=ghRepo(), file=ghFile();
+  var url='https://api.github.com/repos/'+repo+'/contents/'+file;
+  var content=btoa(unescape(encodeURIComponent(JSON.stringify(favs,null,2))));
+  // Get current SHA first
+  fetch(url,{headers:{'Authorization':'token '+token,'Accept':'application/vnd.github.v3+json'}})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(data){
+      var sha=data&&data.sha?data.sha:undefined;
+      var body={message:'Opdater skabeloner',content:content};
+      if(sha) body.sha=sha;
+      return fetch(url,{method:'PUT',
+        headers:{'Authorization':'token '+token,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
+        body:JSON.stringify(body)});
+    })
+    .then(function(r){
+      if(cb)cb(r.ok, r.ok?'OK':'HTTP '+r.status);
+    })
+    .catch(function(e){ if(cb)cb(false,e.message); });
+}
+
+// Pull favorites from GitHub
+function ghPull(cb){
+  var token=ghToken();
+  if(!token){ if(cb)cb(false,'Intet token'); return; }
+  var url='https://api.github.com/repos/'+ghRepo()+'/contents/'+ghFile();
+  fetch(url,{headers:{'Authorization':'token '+token,'Accept':'application/vnd.github.v3+json'}})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(data){
+      if(!data||!data.content){ if(cb)cb(false,'Ingen fil'); return; }
+      var raw=data.content.replace(/\n/g,'');var json=decodeURIComponent(escape(atob(raw)));
+      var favs=JSON.parse(json);
+      setFavs(favs);
+      renderFavs();
+      if(cb)cb(true,'OK');
+    })
+    .catch(function(e){ if(cb)cb(false,e.message); });
+}
+
 function saveFav(){
   var txt=document.getElementById('ita').value.trim();
   if(!txt){ alert('Skriv noget tekst først.'); return; }
@@ -955,18 +1063,25 @@ function saveFav(){
   if(favs.indexOf(txt)!==-1){ alert('Skabelonen findes allerede.'); return; }
   favs.unshift(txt);
   if(favs.length>30) favs=favs.slice(0,30);
-  localStorage.setItem('frameo_favs',JSON.stringify(favs));
+  setFavs(favs);
   renderFavs();
+  // Auto-push to GitHub if token exists
+  if(ghToken()){
+    ghPush(favs, function(ok){
+      var ind=document.getElementById('ghind');
+      if(ind){ ind.textContent=ok?'✅':'❌'; setTimeout(function(){ind.textContent='';},3000); }
+    });
+  }
 }
 function delFav(i){
   var favs=getFavs();
   favs.splice(i,1);
-  localStorage.setItem('frameo_favs',JSON.stringify(favs));
+  setFavs(favs);
   renderFavs();
+  if(ghToken()) ghPush(favs,null);
 }
 function useFav(i){
-  var favs=getFavs();
-  document.getElementById('ita').value=favs[i];
+  document.getElementById('ita').value=getFavs()[i];
 }
 function renderFavs(){
   var fl=document.getElementById('favlist');
@@ -986,7 +1101,16 @@ function renderFavs(){
     '</div>';
   }).join('');
 }
+// Auto-sync from GitHub on load if token exists
+function ghAutoSync(){
+  if(ghToken()){
+    ghPull(function(ok){
+      if(ok) console.log('Skabeloner synkroniseret fra GitHub');
+    });
+  }
+}
 window.saveFav=saveFav;window.delFav=delFav;window.useFav=useFav;
+window.ghSave=ghSave;window.openGHM=openGHM;window.closeGHM=closeGHM;
 
 init();
 </script>
