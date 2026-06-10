@@ -135,7 +135,7 @@ hr{border:none;border-top:1px solid var(--bdr)}
 <header>
   <div>
     <div class="logo">Frameo <span>Editor</span></div>
-    <div class="sub">Billedeeditor med Frameo-deling · v1.46</div>
+    <div class="sub">Billedeeditor med Frameo-deling · v1.47</div>
   </div>
 </header>
 
@@ -974,6 +974,11 @@ function resetMicBtn(){
 
 
 // ── SKABELONER (localStorage + GitHub) ───────────────────────
+// DEFAULT TOKEN - opdateres via ⚙️ og gemmes i filen
+var GH_DEFAULT_TOKEN = '';
+var GH_DEFAULT_REPO  = 'naursgaard/fe';
+var GH_DEFAULT_FILE  = 'skabeloner.json';
+
 function getFavs(){
   try{ return JSON.parse(localStorage.getItem('frameo_favs')||'[]'); }
   catch(e){ return []; }
@@ -982,10 +987,10 @@ function setFavs(favs){
   localStorage.setItem('frameo_favs', JSON.stringify(favs));
 }
 
-// GitHub helpers
-function ghToken(){ return localStorage.getItem('gh_token')||''; }
-function ghRepo(){ return localStorage.getItem('gh_repo')||'naursgaard/fe'; }
-function ghFile(){ return localStorage.getItem('gh_file')||'skabeloner.json'; }
+// GitHub helpers - bruger default hvis localStorage er tom
+function ghToken(){ return localStorage.getItem('gh_token')||GH_DEFAULT_TOKEN; }
+function ghRepo(){  return localStorage.getItem('gh_repo') ||GH_DEFAULT_REPO;  }
+function ghFile(){  return localStorage.getItem('gh_file') ||GH_DEFAULT_FILE;  }
 
 function ghSave(){
   var t=document.getElementById('GHTOKEN').value.trim();
@@ -1005,11 +1010,38 @@ function ghSave(){
     if(!resp.ok){setGHStatus('❌ GitHub fejl: HTTP '+resp.status,'#e74c3c');return;}
     setGHStatus('✅ Token OK! Gemmer skabeloner...','#2ecc71');
     ghPush(getFavs(), function(ok,msg){
-      setGHStatus(ok?'✅ Alt gemt på GitHub!':'❌ Gem fejlede: '+msg, ok?'#2ecc71':'#e74c3c');
+      if(ok){
+        setGHStatus('✅ Alt gemt! Bager token ind i appen...','#2ecc71');
+        ghBakeToken(t,r,f);
+      } else {
+        setGHStatus('❌ Gem fejlede: '+msg,'#e74c3c');
+      }
     });
   }).catch(function(e){
     setGHStatus('❌ Netværksfejl: '+e.message,'#e74c3c');
   });
+}
+
+// Bager token ind i HTML-filen på GitHub så det overlever browser-rydning
+function ghBakeToken(t,r,f){
+  var url='https://api.github.com/repos/'+r+'/contents/index.html';
+  fetch(url,{headers:{'Authorization':'token '+t,'Accept':'application/vnd.github.v3+json'}})
+    .then(function(resp){ return resp.ok?resp.json():null; })
+    .then(function(data){
+      if(!data||!data.content)return;
+      var raw=data.content.replace(/\n/g,'');
+      var html=decodeURIComponent(escape(atob(raw)));
+      // Replace the token/repo/file defaults in the HTML
+      html=html.replace(/var GH_DEFAULT_TOKEN = '.*?';/, "var GH_DEFAULT_TOKEN = '"+t+"';");
+      html=html.replace(/var GH_DEFAULT_REPO  = '.*?';/, "var GH_DEFAULT_REPO  = '"+r+"';");
+      html=html.replace(/var GH_DEFAULT_FILE  = '.*?';/, "var GH_DEFAULT_FILE  = '"+f+"';");
+      var newContent=btoa(unescape(encodeURIComponent(html)));
+      return fetch(url,{method:'PUT',
+        headers:{'Authorization':'token '+t,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
+        body:JSON.stringify({message:'Gem token i app',content:newContent,sha:data.sha})});
+    })
+    .then(function(r){ if(r&&r.ok)setGHStatus('✅ Token gemt permanent i appen!','#2ecc71'); })
+    .catch(function(e){ console.log('bake error',e); });
 }
 function setGHStatus(msg,col){
   var el=document.getElementById('ghstatus');
